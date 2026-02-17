@@ -21,3 +21,22 @@ def has_permission(module, action):
     perms = st.session_state.get('permissions', {})
     permission_key = f"{module}_{action}"
     return perms.get(permission_key, False)
+
+
+
+def verify_login(username, password):
+    conn = sqlite3.connect('COMPASMG.db')
+    cursor = conn.cursor()
+    
+    # On hache le mot de passe saisi pour le comparer à la base
+    hashed_input = hashlib.sha256(password.encode()).hexdigest()
+    
+    cursor.execute('SELECT role FROM users WHERE username = ? AND password = ?', 
+                   (username, hashed_input))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return result[0]  # Retourne le rôle (ex: "Administrateur")
+    return None
+
