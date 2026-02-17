@@ -1,3 +1,7 @@
+import streamlit as st
+from controllers.auth_controller import verify_login
+
+
 def show_home():
     # Injection CSS pour une bannière plein écran et un style épuré
     st.markdown("""
@@ -37,3 +41,24 @@ def verify_login(username, password):
     if result:
         return result[0]  # Retourne le rôle (ex: "Administrateur")
     return None
+
+
+
+def login_page():
+    st.title("🔐 Connexion COMPASMG")
+    
+    with st.form("login_form"):
+        user = st.text_input("Identifiant")
+        pwd = st.text_input("Mot de passe", type="password")
+        submit = st.form_submit_button("Se connecter")
+        
+        if submit:
+            role = verify_login(user, pwd)
+            if role:
+                st.session_state.logged_in = True
+                st.session_state.role = role
+                st.session_state.username = user
+                st.success(f"Bienvenue {user} ({role})")
+                st.rerun()
+            else:
+                st.error("Identifiant ou mot de passe incorrect")
