@@ -48,3 +48,20 @@ def show_members_page():
         LEFT JOIN departments d ON m.department_id = d.id
     """, conn)
     st.dataframe(all_members, use_container_width=True)
+
+    # Affichage de la liste avec sécurité
+    st.subheader("Répertoire Complet")
+    try:
+        all_members = pd.read_sql("""
+            SELECT m.nom, m.prenom, m.postnom, m.qualification, m.telephone, d.name as departement 
+            FROM members m 
+            LEFT JOIN departments d ON m.department_id = d.id
+        """, conn)
+        
+        if not all_members.empty:
+            st.dataframe(all_members, use_container_width=True)
+        else:
+            st.info("Aucun membre enregistré pour le moment.")
+            
+    except Exception as e:
+        st.warning("⚠️ La base de données doit être synchronisée. Créez d'abord un département dans l'onglet Administration.")
