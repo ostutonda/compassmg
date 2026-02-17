@@ -1,6 +1,30 @@
 import streamlit as st
 
 def show_home():
+
+
+ # Injection CSS pour une bannière plein écran et un style épuré
+    st.markdown("""
+        <style>
+        .main {
+            background-color: #f5f7f9;
+        }
+        .stImage > img {
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-height: 400px;
+            object-fit: cover;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+    # Bannière (Remplacez l'URL par votre image locale si besoin)
+    st.image("https://images.unsplash.com/photo-1438232992991-995b7058bbb3", 
+             use_container_width=True)
+    
+    st.title("⛪ Système de Gestion COMPASMG")
+
+
     # Masquer la sidebar pour les visiteurs
     if st.session_state.get('role') == "Visiteur":
         st.markdown("<style>section[data-testid='stSidebar'] {display:none;}</style>", unsafe_allow_html=True)
