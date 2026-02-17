@@ -1,47 +1,39 @@
-import streamlit as st
-import hashlib
-from models.database import get_connection
-
-def show_login_page():
+def show_home():
+    # Injection CSS pour une bannière plein écran et un style épuré
     st.markdown("""
         <style>
-        .login-box {
-            background-color: white;
-            padding: 2rem;
+        .main {
+            background-color: #f5f7f9;
+        }
+        .stImage > img {
             border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-height: 400px;
+            object-fit: cover;
         }
         </style>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    st.subheader("🔐 Connexion Sécurisée")
+    # Bannière (Remplacez l'URL par votre image locale si besoin)
+    st.image("https://images.unsplash.com/photo-1438232992991-995b7058bbb3", 
+             use_container_width=True)
     
-    with st.container():
-        with st.form("login_form"):
-            username = st.text_input("Nom d'utilisateur")
-            password = st.text_input("Mot de passe", type="password")
-            submit = st.form_submit_button("Se connecter")
+    st.title("⛪ Système de Gestion COMPASMG")
+    # ... reste du code visiteur
 
-            if submit:
-                # Hachage du mot de passe pour la comparaison
-                hashed_pwd = hashlib.sha256(password.encode()).hexdigest()
-                
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT role FROM users WHERE username = ? AND password = ?", 
-                               (username, hashed_pwd))
-                result = cursor.fetchone()
-                conn.close()
 
-                if result:
-                    st.session_state.logged_in = True
-                    st.session_state.role = result[0]
-                    st.session_state.username = username
-                    st.success(f"Bienvenue, {username} !")
-                    st.rerun()
-                else:
-                    st.error("Identifiants incorrects. Veuillez réessayer.")
-
-    if st.button("⬅️ Retour à l'accueil"):
-        st.session_state.role = "Visiteur"
-        st.rerun()
+def verify_login(username, password):
+    conn = sqlite3.connect('COMPASMG.db')
+    cursor = conn.cursor()
+    
+    # On hache le mot de passe saisi pour le comparer à la base
+    hashed_input = hashlib.sha256(password.encode()).hexdigest()
+    
+    cursor.execute('SELECT role FROM users WHERE username = ? AND password = ?', 
+                   (username, hashed_input))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return result[0]  # Retourne le rôle (ex: "Administrateur")
+    return None
