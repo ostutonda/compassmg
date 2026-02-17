@@ -36,6 +36,38 @@ def show_admin_panel():
                 else:
                     st.error("Le nom et le président sont obligatoires.")
 
+
+
+    with tab2:
+        st.subheader("Configuration des Accès CRUD")
+        
+        target_role = st.selectbox("Sélectionner un rôle à configurer", 
+                                    ["Secrétariat", "Trésorerie", "Modérateur"])
+        
+        modules = {
+            "membres": "Gestion des Membres",
+            "finance": "Gestion des Finances",
+            "secretariat": "Secrétariat & PDF"
+        }
+        
+        new_permissions = {}
+        
+        for mod_id, mod_name in modules.items():
+            st.write(f"**{mod_name}**")
+            cols = st.columns(4)
+            # On génère les clés dynamiquement : membres_create, membres_read, etc.
+            new_permissions[f"{mod_id}_create"] = cols[0].checkbox("Créer", key=f"c_{mod_id}")
+            new_permissions[f"{mod_id}_read"] = cols[1].checkbox("Lire", key=f"r_{mod_id}", value=True)
+            new_permissions[f"{mod_id}_update"] = cols[2].checkbox("Modifier", key=f"u_{mod_id}")
+            new_permissions[f"{mod_id}_delete"] = cols[3].checkbox("Supprimer", key=f"d_{mod_id}")
+            st.divider()
+
+        if st.button("Enregistrer les privilèges"):
+            # Ici, on pourrait sauvegarder dans une table 'role_permissions'
+            st.session_state[f"perms_{target_role}"] = new_permissions
+            st.success(f"Les droits pour le rôle **{target_role}** ont été mis à jour !")
+
+
     with tab3:
         st.subheader("Gestion des Backups")
         if st.button("📦 Créer une sauvegarde manuelle"):
