@@ -1,53 +1,72 @@
 import streamlit as st
-from models.database import get_connection
-from fpdf import FPDF
 import pandas as pd
-from datetime import datetime
+from models.database import get_connection, add_log
+from controllers.auth_controller import check_privilege
 
 def show_secretariat():
-    st.title("📝 Secrétariat & Courriers")
+    st.title("📝 Secrétariat & Communication")
     conn = get_connection()
     
-    # Récupérer les membres pour la fusion de documents
-    members_df = pd.read_sql("SELECT * FROM members", conn)
-    
-    if members_df.empty:
-        st.warning("⚠️ Aucun membre enregistré. Veuillez d'abord ajouter des membres.")
-        return
+    # Vérification du privilège pour publier
+    can_publish = check_privilege("PUB_ANNONCE")
 
-    st.subheader("Générer une Attestation / Lettre")
-    
-    # Sélection du membre avec ses 3 noms
-    member_list = {f"{r['nom']} {r['prenom']} {r['postnom']}": r for _, r in members_df.iterrows()}
-    selected_member_name = st.selectbox("Choisir le membre", options=list(member_list.keys()))
-    m = member_list[selected_member_name]
+    tab1, tab2 = st.tabs(["📢 Publier une annonce", "🗂️ Gérer les annonces existantes"])
 
-    # Éditeur de texte dynamique
-    default_text = f"""OBJET : ATTESTATION DE MEMBRE
+    with tab1:
+        if not can_publish:
+            st.error("🚫 Vous n'avez pas les privilèges nécessaires pour publier.")
+        else:
+            st.subheader("Nouvelle Publication")
+            with st.form("publish_form", clear_on_submit=True):
+                title = st.text_input("Titre de l'annonce")
+                content = st.text_area("Contenu du message")
+                
+                c1, c2 = st.columns(2)
+                v_type = c1.selectbox("Visibilité", ["Public", "Privé"])
+                
+                # Récupération des départements pour le ciblage
+                depts_df = pd.read_sql("SELECT name FROM departments", conn)
+                depts = ["Tous"] + depts_df['name'].tolist()
+                
+                # Le choix du département n'est pertinent que si c'est "Privé"
+                v_dept = c2.selectbox("Département ciblé", options=depts, 
+                                     help="Si Public, 'Tous' est recommandé.")
 
-Je soussigné, Secrétaire de l'organisation COMPASMG, certifie que :
-Monsieur/Madame {m['nom']} {m['prenom']} {m['postnom']}, 
-exerçant la profession de {m['qualification']} et résidant au {m['adresse']},
-est un membre actif de notre communauté.
+                if st.form_submit_button("🚀 Publier l'annonce"):
+                    if title and content:
+                        conn.execute("""
+                            INSERT INTO announcements (title, content, type, department_name, date_pub)
+                            VALUES (?, ?, ?, ?, DATE('now'))
+                        """, (title, content, v_type, v_dept))
+                        conn.commit()
+                        add_log(st.session_state.username, f"Publication: {title}", st.session_state.role)
+                        st.success("Annonce publiée avec succès !")
+                        st.rerun()
+                    else:
+                        st.warning("Veuillez remplir le titre et le contenu.")
 
-Fait à Kinshasa, le {datetime.now().strftime('%d/%m/%Y')}."""
-
-    letter_content = st.text_area("Texte de la lettre", value=default_text, height=300)
-
-    if st.button("📄 Générer le PDF"):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, "COMPASMG - SECRÉTARIAT GÉNÉRAL", ln=1, align='C')
-        pdf.ln(20)
+    with tab2:
+        st.subheader("Historique des publications")
         
-        pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, txt=letter_content.encode('latin-1', 'replace').decode('latin-1'))
+        # Lecture des annonces
+        df_ann = pd.read_sql("SELECT id, title as Titre, type as Type, department_name as Cible, date_pub as Date FROM announcements ORDER BY id DESC", conn)
         
-        pdf_bytes = pdf.output(dest='S')
-        st.download_button(
-            label="📥 Télécharger le document",
-            data=pdf_bytes,
-            file_name=f"lettre_{m['nom']}.pdf",
-            mime="application/pdf"
-        )
+        if df_ann.empty:
+            st.info("Aucune annonce publiée pour le moment.")
+        else:
+            st.dataframe(df_ann, use_container_width=True)
+            
+            # --- CRUD : Suppression ---
+            if can_publish:
+                st.divider()
+                st.markdown("#### 🗑️ Supprimer une annonce")
+                ann_to_delete = st.selectbox("Choisir l'annonce à retirer", 
+                                             options=df_ann['id'], 
+                                             format_func=lambda x: f"ID {x} - {df_ann[df_ann['id']==x]['Titre'].values[0]}")
+                
+                if st.button("Confirmer la suppression", type="primary"):
+                    conn.execute("DELETE FROM announcements WHERE id = ?", (ann_to_delete,))
+                    conn.commit()
+                    add_log(st.session_state.username, f"Suppression annonce ID {ann_to_delete}", st.session_state.role)
+                    st.success("Annonce supprimée.")
+                    st.rerun()

@@ -1,64 +1,47 @@
 import streamlit as st
-from controllers.auth_controller import verify_login
-
+import pandas as pd
+from models.database import get_connection
+from controllers.auth_controller import login_logic
 
 def show_home():
-    # Injection CSS pour une bannière plein écran et un style épuré
-    st.markdown("""
-        <style>
-        .main {
-            background-color: #f5f7f9;
-        }
-        .stImage > img {
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            max-height: 400px;
-            object-fit: cover;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-    # Bannière (Remplacez l'URL par votre image locale si besoin)
-    st.image("https://images.unsplash.com/photo-1438232992991-995b7058bbb3", 
-             use_container_width=True)
+    st.title("🏠 Bienvenue sur COMPASMG")
     
-    st.title("⛪ Système de Gestion COMPASMG")
-    # ... reste du code visiteur
+    # FORMULAIRE DE CONNEXION (Visible seulement si non connecté)
+    if not st.session_state.get('logged_in'):
+        with st.expander("🔐 Connexion (Membre ou Staff)", expanded=True):
+            col1, col2 = st.columns(2)
+            u = col1.text_input("Nom ou Identifiant")
+            p = col2.text_input("Mot de passe (Laisser vide si membre)", type="password")
+            if st.button("Se connecter", use_container_width=True):
+                if login_logic(u, p if p else None):
+                    st.success("Connexion réussie !")
+                    st.rerun()
+                else:
+                    st.error("Accès refusé.")
+        st.divider()
 
+    # AFFICHAGE DES ANNONCES (Filtrage dynamique)
+    st.subheader("📢 Dernières Annonces")
+    conn = get_connection()
+    role = st.session_state.get('role', 'Visiteur')
+    user_dept = st.session_state.get('dept', 'Tous')
 
-def verify_login(username, password):
-    conn = sqlite3.connect('COMPASMG.db')
-    cursor = conn.cursor()
-    
-    # On hache le mot de passe saisi pour le comparer à la base
-    hashed_input = hashlib.sha256(password.encode()).hexdigest()
-    
-    cursor.execute('SELECT role FROM users WHERE username = ? AND password = ?', 
-                   (username, hashed_input))
-    result = cursor.fetchone()
-    conn.close()
-    
-    if result:
-        return result[0]  # Retourne le rôle (ex: "Administrateur")
-    return None
+    # Logique SQL pour la visibilité
+    if role == "Admin":
+        query = "SELECT * FROM announcements ORDER BY date_pub DESC"
+        df = pd.read_sql(query, conn)
+    elif role == "Visiteur":
+        query = "SELECT * FROM announcements WHERE type='Public' ORDER BY date_pub DESC"
+        df = pd.read_sql(query, conn)
+    else: # Membre, Secrétaire, Trésorier
+        query = "SELECT * FROM announcements WHERE type='Public' OR (type='Privé' AND department_name=?) ORDER BY date_pub DESC"
+        df = pd.read_sql(query, conn, params=(user_dept,))
 
-
-
-def login_page():
-    st.title("🔐 Connexion COMPASMG")
-    
-    with st.form("login_form"):
-        user = st.text_input("Identifiant")
-        pwd = st.text_input("Mot de passe", type="password")
-        submit = st.form_submit_button("Se connecter")
-        
-        if submit:
-            role = verify_login(user, pwd)
-            if role:
-                st.session_state.logged_in = True
-                st.session_state.role = role
-                st.session_state.username = user
-                st.success(f"Bienvenue {user} ({role})")
-                st.rerun()
-            else:
-                st.error("Identifiant ou mot de passe incorrect")
+    if df.empty:
+        st.info("Aucune annonce disponible.")
+    else:
+        for _, row in df.iterrows():
+            with st.chat_message("user" if row['type'] == 'Public' else "assistant"):
+                st.write(f"**{row['title']}**")
+                st.caption(f"Le {row['date_pub']} | {row['type']} - {row['department_name']}")
+                st.write(row['content'])
