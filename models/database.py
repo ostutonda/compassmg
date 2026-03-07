@@ -5,70 +5,43 @@ from datetime import datetime
 def get_connection():
     return sqlite3.connect("compasmg.db", check_same_thread=False)
 
-def add_log(username, action, role):
-    conn = get_connection()
-    conn.execute("INSERT INTO logs (username, action, role, timestamp) VALUES (?,?,?,?)",
-                 (username, action, role, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
-
 def init_db():
     conn = get_connection()
     c = conn.cursor()
     
-    # Table pour la configuration visuelle
-    conn.execute('''CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )''')
+    # Départements
+    c.execute('CREATE TABLE IF NOT EXISTS departments (name TEXT PRIMARY KEY, description TEXT, created_at DATE)')
     
-    # Valeurs par défaut si la table est vide
-    defaults = [
-        ('primary_color', '#2E7D32'),
-        ('bg_color', '#F5F7F9'),
-        ('app_name', 'COMPASMG'),
-        ('logo_url', '')
-    ]
-    for key, val in defaults:
-        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
-    
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS departments (
-        name TEXT PRIMARY KEY, created_at DATE NOT NULL
-    )''')
-
+    # Table unique Membres/Utilisateurs fusionnée
     c.execute('''CREATE TABLE IF NOT EXISTS members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, nom TEXT, prenom TEXT, postnom TEXT,
-        date_naissance DATE, adresse TEXT, qualification TEXT, email TEXT, telephone TEXT,
-        department_name TEXT, FOREIGN KEY (department_name) REFERENCES departments(name)
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        nom TEXT UNIQUE, prenom TEXT, postnom TEXT, telephone TEXT,
+        isUser INTEGER DEFAULT 0, 
+        password TEXT, 
+        role TEXT DEFAULT 'Membre', 
+        privileges TEXT DEFAULT ''
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER,
-        username TEXT UNIQUE, password TEXT, role TEXT, privileges TEXT,
-        FOREIGN KEY (member_id) REFERENCES members(id)
+    # Table de liaison (Un membre <-> Plusieurs Départements)
+    c.execute('''CREATE TABLE IF NOT EXISTS member_departments (
+        member_id INTEGER, 
+        department_name TEXT,
+        is_leader INTEGER DEFAULT 0,
+        FOREIGN KEY(member_id) REFERENCES members(id),
+        FOREIGN KEY(department_name) REFERENCES departments(name),
+        PRIMARY KEY (member_id, department_name)
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS announcements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, 
-        type TEXT, department_name TEXT, date_pub DATE
-    )''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS finance_categories (name TEXT PRIMARY KEY)''')
+    # Nouvelles tables pour le menu Département
+    c.execute('CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, dept_name TEXT, title TEXT, date DATE)')
+    c.execute('CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY, activity_id INTEGER, member_id INTEGER, status TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS programs (id INTEGER PRIMARY KEY, dept_name TEXT, content TEXT, date DATE)')
+    c.execute('CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY, title TEXT, content TEXT, type TEXT, department_name TEXT, date_pub DATE)')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS finance_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, amount REAL, 
-        currency TEXT, rate REAL, date DATE, type TEXT, description TEXT
-    )''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT, role TEXT, timestamp DATETIME
-    )''')
-
-    # Création Admin par défaut
+    # Admin par défaut
     pwd_hash = hashlib.sha256("admin123".encode()).hexdigest()
-    c.execute("INSERT OR IGNORE INTO users (username, password, role, privileges) VALUES (?, ?, ?, ?)",
-              ('admin', pwd_hash, 'Admin', 'TOUT'))
-
+    c.execute("INSERT OR IGNORE INTO members (nom, prenom, isUser, password, role, privileges) VALUES (?, ?, ?, ?, ?, ?)",
+              ('admin', 'Super', 1, pwd_hash, 'Admin', 'ALL'))
+              
     conn.commit()
     conn.close()
