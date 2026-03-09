@@ -125,7 +125,7 @@ if st.sidebar.button("Tester Connexion Deriv"):
     else:
         st.sidebar.error("Échec de connexion.")
 
-def update_sidebar_stats():
+def update_sidebar_stats(symbol, tf_seconds):
     count = st.session_state.fetcher.get_stored_count(symbol, tf_seconds)
     st.sidebar.info(f"📁 Bougies en base : {count}")
 
