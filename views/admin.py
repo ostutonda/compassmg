@@ -39,7 +39,7 @@ def show_admin_panel():
                         except: st.error("L'identifiant existe déjà.")
 
 # --- TAB 2 : CRUD DÉPARTEMENTS ---
-   with tab2:
+    with tab2:
        st.subheader("🎨 Personnalisation du Thème")
         
         # Récupération des paramètres actuels depuis la DB
