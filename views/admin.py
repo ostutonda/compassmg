@@ -114,11 +114,17 @@ def show_admin_panel():
 
 
 
-    with tab3:
-        st.subheader("Journal Logs (Imprimable)")
-        logs_df = pd.read_sql("SELECT timestamp, username, role, action FROM logs ORDER BY timestamp DESC", conn)
+    with tabs[3]:
+    st.subheader("📜 Historique des actions (Logs)")
+    
+    # On utilise 'user' (le nom en base) et on peut le renommer en 'username' pour l'affichage
+    query = "SELECT timestamp, user as username, role, action FROM logs ORDER BY timestamp DESC LIMIT 100"
+    
+    try:
+        logs_df = pd.read_sql(query, conn)
         st.dataframe(logs_df, use_container_width=True)
-        st.download_button("📥 Télécharger les logs (CSV)", logs_df.to_csv(index=False), "logs_compasmg.csv")
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture des logs : {e}")
         
     with tab4:
         st.subheader("Personnalisation de l'interface")
