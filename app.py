@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from models.database import init_db, get_connection
 
- from views import home, admin, membres, finance, secretariat, departement
+from views import home, admin, membres, finance, secretariat, departement
 
 # ==========================================
 # 1. CONFIGURATION DE LA PAGE (DOIT ÊTRE EN PREMIER)
