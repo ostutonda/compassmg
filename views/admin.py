@@ -115,7 +115,7 @@ def show_admin_panel():
 
 
     with tabs[3]:
-    st.subheader("📜 Historique des actions (Logs)")
+        st.subheader("📜 Historique des actions (Logs)")
     
     # On utilise 'user' (le nom en base) et on peut le renommer en 'username' pour l'affichage
     query = "SELECT timestamp, user as username, role, action FROM logs ORDER BY timestamp DESC LIMIT 100"
