@@ -110,3 +110,12 @@ def add_log(user, action, role):
         conn.close()
     except Exception as e:
         print(f"Erreur de journalisation : {e}")
+
+# Ajoutez ceci dans la fonction init_db() de models/database.py
+c.execute('''CREATE TABLE IF NOT EXISTS finance_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+    name TEXT UNIQUE)''')
+
+# Insertion de quelques catégories par défaut
+default_cats = [('Offrandes',), ('Dîmes',), ('Action de grâce',), ('Construction',), ('Social',), ('Fonctionnement',)]
+c.executemany("INSERT OR IGNORE INTO finance_categories (name) VALUES (?)", default_cats)
