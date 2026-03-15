@@ -7,8 +7,7 @@ def show_admin_panel():
     st.title("⚙️ Administration")
     conn = get_connection()
     
-    tab1, tab2, tab3, tab4 = st.tabs(["👤 Users", "📁 Dépts", "📜 Logs", "🎨 Design"])
-
+    tab1, tab2, tab3, tab4 = st.tabs(["👥 Membres", "🏢 Départements", "⚙️ Paramètres", "📜 Logs"]) 
     with tab1:
         st.subheader("Affecter un rôle à un membre")
         members_df = pd.read_sql("SELECT id, nom, prenom FROM members", conn)
