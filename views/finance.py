@@ -1,88 +1,114 @@
 import streamlit as st
 import pandas as pd
+from datetime import date
+import json
 from models.database import get_connection, add_log
-from controllers.auth_controller import check_privilege
-
-# Exemple pour la Finance
-col1, col2, col3 = st.columns(3)
-col1.metric("Recettes du mois", "4,500 $", "+12%")
-col2.metric("Dépenses", "1,200 $", "-5%")
-col3.metric("Solde Net", "3,300 $", delta_color="normal")
-
-
-
 
 def show_finance():
-    st.title("💰 Trésorerie & Rapports")
+    st.title("💰 Trésorerie & Billetage")
     conn = get_connection()
+    today = date.today()
+
+    # --- 1. GESTION DU TAUX DE CHANGE ---
+    st.sidebar.subheader("💱 Taux de change du jour")
     
-    # Configuration du taux (très important en RDC)
-    st.sidebar.subheader("Configuration Change")
-    taux_du_jour = st.sidebar.number_input("Taux (1$ = ? FC)", value=2800, step=10)
+    # Récupérer le taux du jour s'il existe
+    rate_db = conn.execute("SELECT rate FROM exchange_rates WHERE date_rate = ?", (today,)).fetchone()
+    current_rate = rate_db[0] if rate_db else 2800.0  # Valeur par défaut si non défini
 
-    tab1, tab2 = st.tabs(["📊 Transactions", "📈 Rapports Financiers"])
+    new_rate = st.sidebar.number_input("1 $ USD = ? CDF", value=float(current_rate), step=50.0)
+    
+    if st.sidebar.button("💾 Enregistrer le taux"):
+        conn.execute("INSERT OR REPLACE INTO exchange_rates (date_rate, rate) VALUES (?, ?)", (today, new_rate))
+        conn.commit()
+        add_log(st.session_state.username, f"Mise à jour taux: 1$ = {new_rate} CDF", st.session_state.role)
+        st.sidebar.success("Taux mis à jour !")
+        st.rerun()
 
+    tab1, tab2, tab3 = st.tabs(["💵 Saisie d'Opération (Billetage)", "📊 Historique", "📈 Rapport Global"])
+
+    # --- ONGLET 1 : SAISIE AVEC BILLETAGE ---
     with tab1:
-        col_a, col_b = st.columns([1, 2])
+        st.subheader("Nouvelle transaction")
         
-        with col_a:
-            st.subheader("Nouvelle Opération")
-            with st.form("fin_form", clear_on_submit=True):
-                # Catégories dynamiques
-                cats = pd.read_sql("SELECT name FROM finance_categories", conn)['name'].tolist()
-                
-                amount = st.number_input("Montant", min_value=0.0)
-                devise = st.selectbox("Monnaie", ["USD ($)", "CDF (Fc)"])
-                category = st.selectbox("Catégorie", options=cats if cats else ["Général"])
-                m_type = st.radio("Type", ["Entrée", "Sortie"])
-                desc = st.text_input("Description / Motif")
-                
-                if st.form_submit_button("Enregistrer"):
-                    curr = "USD" if "USD" in devise else "CDF"
-                    conn.execute("""
-                        INSERT INTO finance_transactions (category, amount, currency, rate, date, type, description)
-                        VALUES (?, ?, ?, ?, DATE('now'), ?, ?)
-                    """, (category, amount, curr, taux_du_jour, m_type, desc))
-                    conn.commit()
-                    st.success("Transaction enregistrée !")
-                    st.rerun()
+        col_date, col_type, col_lib = st.columns([1, 1, 2])
+        trans_date = col_date.date_input("Date de l'opération", value=today)
+        trans_type = col_type.selectbox("Type", ["Entrée", "Sortie"])
+        trans_label = col_lib.text_input("Libellé (ex: Offrandes du culte, Achat chaises)")
 
-        with col_b:
-            st.subheader("Gestion des Catégories")
-            new_cat = st.text_input("Nom de la catégorie (ex: Offrandes, Loyer)")
-            if st.button("Ajouter Catégorie"):
-                conn.execute("INSERT OR IGNORE INTO finance_categories VALUES (?)", (new_cat,))
+        st.markdown("### 🧮 Billetage")
+        col_usd, col_cdf = st.columns(2)
+
+        # -- TABLEAU USD --
+        with col_usd:
+            st.write("🇺🇸 **Caisse USD ($)**")
+            df_usd = pd.DataFrame({"Billet": [100, 50, 20, 10, 5, 1], "Nombre": [0, 0, 0, 0, 0, 0]})
+            edited_usd = st.data_editor(df_usd, hide_index=True, use_container_width=True)
+            total_usd = (edited_usd["Billet"] * edited_usd["Nombre"]).sum()
+            st.success(f"**Total USD : {total_usd:,.2f} $**")
+
+        # -- TABLEAU CDF --
+        with col_cdf:
+            st.write("🇨🇩 **Caisse CDF (Francs)**")
+            df_cdf = pd.DataFrame({"Billet": [20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50], "Nombre": [0, 0, 0, 0, 0, 0, 0, 0, 0]})
+            edited_cdf = st.data_editor(df_cdf, hide_index=True, use_container_width=True)
+            total_cdf = (edited_cdf["Billet"] * edited_cdf["Nombre"]).sum()
+            st.info(f"**Total CDF : {total_cdf:,.2f} Fc**")
+
+        st.divider()
+        
+        # Résultat de l'opération
+        grand_total_cdf = total_cdf + (total_usd * new_rate)
+        st.markdown(f"#### 🏷️ Valeur totale de l'opération : **{grand_total_cdf:,.2f} CDF** *(Taux: {new_rate})*")
+
+        if st.button("✅ Valider l'opération", type="primary"):
+            if trans_label:
+                # Sauvegarde du billetage en format texte (JSON) pour archive
+                billetage_data = {
+                    "usd": edited_usd.to_dict('records'),
+                    "cdf": edited_cdf.to_dict('records')
+                }
+                
+                conn.execute("""
+                    INSERT INTO finances (date_trans, type, label, total_usd, total_cdf, rate, billetage_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (trans_date, trans_type, trans_label, float(total_usd), float(total_cdf), new_rate, json.dumps(billetage_data)))
                 conn.commit()
+                add_log(st.session_state.username, f"Finance {trans_type}: {trans_label}", st.session_state.role)
+                st.success("Opération enregistrée avec succès !")
                 st.rerun()
-
-    with tab2:
-        st.subheader("Rapports Multi-Devises")
-        df = pd.read_sql("SELECT * FROM finance_transactions ORDER BY date DESC", conn)
-        
-        if df.empty:
-            st.info("Aucune transaction enregistrée.")
-        else:
-            # Choix de l'affichage du rapport
-            mode = st.radio("Afficher les montants en :", ["Devise d'origine", "Tout en USD ($)", "Tout en CDF (Fc)"], horizontal=True)
-            
-            # Calcul des colonnes pour le rapport
-            if mode == "Tout en USD ($)":
-                df['Montant Rapport'] = df.apply(lambda r: r['amount'] if r['currency'] == 'USD' else r['amount'] / r['rate'], axis=1)
-                df['Devise'] = "USD"
-            elif mode == "Tout en CDF (Fc)":
-                df['Montant Rapport'] = df.apply(lambda r: r['amount'] if r['currency'] == 'CDF' else r['amount'] * r['rate'], axis=1)
-                df['Devise'] = "CDF"
             else:
-                df['Montant Rapport'] = df['amount']
-                df['Devise'] = df['currency']
+                st.error("Le libellé de l'opération est obligatoire.")
 
-            # Tri du rapport
-            sort_by = st.selectbox("Trier par", ["date", "category", "amount"])
-            df = df.sort_values(by=sort_by, ascending=False)
+    # --- ONGLET 2 : HISTORIQUE ---
+    with tab2:
+        st.subheader("Historique des transactions")
+        df_fin = pd.read_sql("SELECT id, date_trans as Date, type as Type, label as Libellé, total_usd as 'Total ($)', total_cdf as 'Total (Fc)', rate as Taux FROM finances ORDER BY date_trans DESC, id DESC", conn)
+        
+        if not df_fin.empty:
+            # Coloration conditionnelle basique
+            def color_type(val):
+                color = '#e6ffe6' if val == 'Entrée' else '#ffe6e6'
+                return f'background-color: {color}'
             
-            st.dataframe(df[['date', 'category', 'type', 'Montant Rapport', 'Devise', 'description']], use_container_width=True)
+            st.dataframe(df_fin.style.map(color_type, subset=['Type']), use_container_width=True)
+        else:
+            st.info("Aucune transaction enregistrée.")
+
+    # --- ONGLET 3 : RAPPORTS (À DÉVELOPPER) ---
+    with tab3:
+        st.subheader("Synthèse des Caisses")
+        if not df_fin.empty:
+            entrees_usd = df_fin[df_fin['Type'] == 'Entrée']['Total ($)'].sum()
+            sorties_usd = df_fin[df_fin['Type'] == 'Sortie']['Total ($)'].sum()
+            solde_usd = entrees_usd - sorties_usd
             
-            # Résumé rapide
-            total_in = df[df['type'] == 'Entrée']['Montant Rapport'].sum()
-            total_out = df[df['type'] == 'Sortie']['Montant Rapport'].sum()
-            st.metric("Solde Net (selon mode choisi)", f"{total_in - total_out:,.2f} {df['Devise'].iloc[0] if not df.empty else ''}")
+            entrees_cdf = df_fin[df_fin['Type'] == 'Entrée']['Total (Fc)'].sum()
+            sorties_cdf = df_fin[df_fin['Type'] == 'Sortie']['Total (Fc)'].sum()
+            solde_cdf = entrees_cdf - sorties_cdf
+            
+            col1, col2 = st.columns(2)
+            col1.metric("Solde Caisse USD", f"{solde_usd:,.2f} $", f"+{entrees_usd} / -{sorties_usd}")
+            col2.metric("Solde Caisse CDF", f"{solde_cdf:,.2f} Fc", f"+{entrees_cdf} / -{sorties_cdf}")
+        else:
+            st.write("En attente de données...")
