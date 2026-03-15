@@ -1,8 +1,14 @@
 import streamlit as st
+import sys
 import os
 from models.database import init_db, get_connection
 
-from views import home, admin, membres, finance, secretariat, departement
+# On importe les vues une par une pour isoler le problème
+try:
+    from views import home, admin, membres, finance, secretariat, departement
+except Exception as e:
+    st.error(f"Erreur lors du chargement des modules : {e}")
+    st.stop()
 
 # ==========================================
 # 1. CONFIGURATION DE LA PAGE (DOIT ÊTRE EN PREMIER)
