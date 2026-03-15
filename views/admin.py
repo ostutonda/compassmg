@@ -39,78 +39,50 @@ def show_admin_panel():
                         except: st.error("L'identifiant existe déjà.")
 
 # --- TAB 2 : CRUD DÉPARTEMENTS ---
-    with tab2:
-        st.subheader("Liste des Départements")
+   with tab2:
+       st.subheader("🎨 Personnalisation du Thème")
         
-        # 1. LECTURE (Read)
-        df_depts = pd.read_sql("SELECT name as Nom, created_at as 'Date Création' FROM departments", conn)
-        
-        if df_depts.empty:
-            st.info("Aucun département enregistré.")
-        else:
-            st.dataframe(df_depts, use_container_width=True)
+        # Récupération des paramètres actuels depuis la DB
+        settings_df = pd.read_sql("SELECT * FROM settings", conn)
+        settings_dict = dict(zip(settings_df['key'], settings_df['value']))
 
-        st.divider()
-        
-        col_create, col_edit = st.columns(2)
+        with st.form("theme_form"):
+            col1, col2 = st.columns(2)
+            
+            # --- Couleurs ---
+            primary_color = col1.color_picker("Couleur Principale (Boutons, En-têtes)", 
+                                             value=settings_dict.get('primary_color', '#2E7D32'))
+            bg_color = col2.color_picker("Couleur d'Arrière-plan", 
+                                         value=settings_dict.get('bg_color', '#F5F7F9'))
+            text_color = col1.color_picker("Couleur du Texte", 
+                                          value=settings_dict.get('text_color', '#1A1A1A'))
+            
+            # --- Textes ---
+            app_name = col2.text_input("Nom de l'Église / Application", 
+                                      value=settings_dict.get('app_name', 'COMPASMG'))
+            
+            st.divider()
+            
+            # --- Style des Boutons ---
+            btn_radius = st.slider("Arrondi des boutons (pixels)", 0, 25, 
+                                  int(settings_dict.get('btn_radius', '8')))
 
-        # 2. CRÉATION (Create)
-        with col_create:
-            st.markdown("#### ✨ Nouveau Département")
-            with st.form("form_add_dept"):
-                new_name = st.text_input("Nom du département")
-                new_date = st.date_input("Date de fondation")
-                if st.form_submit_button("Ajouter"):
-                    if new_name:
-                        try:
-                            conn.execute("INSERT INTO departments (name, created_at) VALUES (?,?)", (new_name, new_date))
-                            conn.commit()
-                            add_log(st.session_state.username, f"Création dépt: {new_name}", st.session_state.role)
-                            st.success(f"Département '{new_name}' créé !")
-                            st.rerun()
-                        except:
-                            st.error("Ce nom existe déjà.")
-                    else:
-                        st.error("Le nom est obligatoire.")
-
-        # 3. MODIFICATION & SUPPRESSION (Update & Delete)
-        with col_edit:
-            st.markdown("#### ✏️ Modifier / Supprimer")
-            if not df_depts.empty:
-                selected_dept = st.selectbox("Choisir un département", df_depts['Nom'])
+            if st.form_submit_button("💾 Appliquer le nouveau thème"):
+                # Sauvegarde massive dans la table settings
+                new_settings = [
+                    ('primary_color', primary_color),
+                    ('bg_color', bg_color),
+                    ('text_color', text_color),
+                    ('app_name', app_name),
+                    ('btn_radius', str(btn_radius))
+                ]
                 
-                # Récupérer les données actuelles
-                current_date = df_depts[df_depts['Nom'] == selected_dept]['Date Création'].values[0]
+                for key, val in new_settings:
+                    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
                 
-                edit_name = st.text_input("Renommer en", value=selected_dept)
-                edit_date = st.date_input("Modifier la date", value=pd.to_datetime(current_date))
-
-                c1, c2 = st.columns(2)
-                
-                # UPDATE
-                if c1.button("💾 Enregistrer"):
-                    # On met à jour le département ET les membres liés (ON UPDATE CASCADE manuel)
-                    conn.execute("UPDATE members SET department_name = ? WHERE department_name = ?", (edit_name, selected_dept))
-                    conn.execute("UPDATE announcements SET department_name = ? WHERE department_name = ?", (edit_name, selected_dept))
-                    conn.execute("UPDATE departments SET name = ?, created_at = ? WHERE name = ?", (edit_name, edit_date, selected_dept))
-                    conn.commit()
-                    st.success("Mise à jour effectuée !")
-                    st.rerun()
-
-                # DELETE
-                if c2.button("🗑️ Supprimer", type="secondary"):
-                    # Vérifier s'il y a des membres
-                    check_members = conn.execute("SELECT COUNT(*) FROM members WHERE department_name = ?", (selected_dept,)).fetchone()[0]
-                    if check_members > 0:
-                        st.error(f"Impossible de supprimer : {check_members} membres y sont rattachés.")
-                    else:
-                        conn.execute("DELETE FROM departments WHERE name = ?", (selected_dept,))
-                        conn.commit()
-                        st.warning(f"Département '{selected_dept}' supprimé.")
-                        st.rerun()
-            else:
-                st.write("Rien à modifier.")
-
+                conn.commit()
+                st.success("✨ Thème mis à jour ! Rechargez la page pour voir les changements.")
+                st.rerun()
 
 
     with tabs[3]:
