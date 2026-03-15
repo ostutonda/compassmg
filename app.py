@@ -1,7 +1,23 @@
 import streamlit as st
 import os
 from models.database import init_db, get_connection
-from views import home, admin, membres, finance, secretariat, departement
+
+# Remplacez la ligne 4 par ceci :
+from views import home
+print("Home OK")
+from views import admin
+print("Admin OK")
+from views import membres
+print("Membres OK")
+from views import finance
+print("Finance OK")
+from views import secretariat
+print("Secretariat OK")
+from views import departement
+print("Departement OK")
+ 
+
+#from views import home, admin, membres, finance, secretariat, departement
 
 # ==========================================
 # 1. CONFIGURATION DE LA PAGE (DOIT ÊTRE EN PREMIER)
