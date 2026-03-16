@@ -13,10 +13,14 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS departments (name TEXT PRIMARY KEY, description TEXT, created_at DATE)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, nom TEXT UNIQUE, prenom TEXT, postnom TEXT, telephone TEXT,
-        adresse TEXT, profession TEXT, date_naissance DATE,
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        nom TEXT, prenom TEXT, postnom TEXT,
+        sexe TEXT, lieu_naissance TEXT, date_naissance DATE,
+        etat_civil TEXT, adresse TEXT, telephone TEXT, email TEXT,
+        date_bapteme DATE, profession TEXT,
+        contact_urgence_nom TEXT, contact_urgence_lien TEXT, contact_urgence_tel TEXT,
         isUser INTEGER DEFAULT 0, password TEXT, role TEXT DEFAULT 'Membre', privileges TEXT DEFAULT '')''')
-
+    
     c.execute('''CREATE TABLE IF NOT EXISTS member_departments (
         member_id INTEGER, department_name TEXT, is_leader INTEGER DEFAULT 0,
         FOREIGN KEY(member_id) REFERENCES members(id), FOREIGN KEY(department_name) REFERENCES departments(name),
