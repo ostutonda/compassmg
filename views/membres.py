@@ -43,8 +43,8 @@ def show_members():
             st.subheader("⛪ Vie Spirituelle & Profession")
             col10, col11 = st.columns(2)
             
-            #min_date = date(1920, 1, 1)  # Permet de remonter à plus de 100 ans
-            #max_date = date.today()       # Empêche de naître dans le futur
+            min_date = date(1920, 1, 1)  # Permet de remonter à plus de 100 ans
+            max_date = date.today()       # Empêche de naître dans le futur
             date_bapteme = col10.date_input("Date de baptême")
             value=date(2000, 1, 1), # Valeur par défaut (ex: l'an 2000)
             min_value=min_date,
