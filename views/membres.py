@@ -4,7 +4,7 @@ from datetime import date
 from models.database import get_connection, add_log
 
 
-def show_membres():
+def show_members():
     st.title("👥 Gestion des Membres")
     conn = get_connection()
 
