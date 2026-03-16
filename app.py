@@ -14,7 +14,7 @@ except Exception as e:
 # 1. CONFIGURATION DE LA PAGE (DOIT ÊTRE EN PREMIER)
 # ==========================================
 st.set_page_config(
-    page_title="Porrtail COMPASSION MONT-NGAFULA ",
+    page_title="COMPASSION MONT-NGAFULA /HABITAT ",
     layout="wide"
 )
 
@@ -107,11 +107,11 @@ elif os.path.exists(logo_path):
     st.sidebar.image(logo_path, use_container_width=True)
 # Priorité 3: Emoji et Texte par défaut
 else:
-    app_name = conf.get('app_name', 'COMPASMG')
+    app_name = conf.get('app_name', 'C MGH')
     st.sidebar.markdown(f"""
         <div style='text-align: center; padding: 10px; border: 2px dashed #2E7D32; border-radius: 10px;'>
             <span style='font-size: 50px;'>⛪</span>
-            <p style='color: #2E7D32; font-weight: bold;'>{app_name}</p>
+            <p style='color: #2E7D32; font-weight: bold;'>{by OTM}</p>
         </div>
     """, unsafe_allow_html=True)
 
