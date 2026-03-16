@@ -20,7 +20,15 @@ def show_members():
             col4, col5, col6 = st.columns(3)
             sexe = col4.selectbox("Sexe", ["Masculin", "Féminin"])
             lieu_naiss = col5.text_input("Lieu de naissance")
-            date_naiss = col6.date_input("Date de naissance")
+            
+            # On définit les limites
+            min_date = date(1920, 1, 1)  # Permet de remonter à plus de 100 ans
+            max_date = date.today()       # Empêche de naître dans le futur
+            date_naiss = col6.date_input("Date de naissance",
+            value=date(2000, 1, 1), # Valeur par défaut (ex: l'an 2000)
+            min_value=min_date,
+            max_value=max_date
+            )
 
             # --- État Civil et Contact ---
             st.subheader("📞 État Civil & Contact")
@@ -34,7 +42,15 @@ def show_members():
             # --- Vie Spirituelle et Pro ---
             st.subheader("⛪ Vie Spirituelle & Profession")
             col10, col11 = st.columns(2)
+            
+            #min_date = date(1920, 1, 1)  # Permet de remonter à plus de 100 ans
+            #max_date = date.today()       # Empêche de naître dans le futur
             date_bapteme = col10.date_input("Date de baptême")
+            value=date(2000, 1, 1), # Valeur par défaut (ex: l'an 2000)
+            min_value=min_date,
+            max_value=max_date
+            )
+            
             profession = col11.text_input("Profession")
 
             # --- Urgence ---
