@@ -64,8 +64,8 @@ def show_finance():
             cat_dest = col2.selectbox("Destination (Entrée)", options=cats_df['name'].tolist())
             
             m1, m2 = st.columns(2)
-            amt_usd = m1.number_input("Montant USD to Transfer", min_value=0.0)
-            amt_cdf = m2.number_input("Montant CDF to Transfer", min_value=0.0)
+            format_money(amt_usd) = m1.number_input("Montant USD to Transfer", min_value=0.0) 
+            format_money(amt_cdf) = m2.number_input("Montant CDF to Transfer", min_value=0.0)
             
             if st.form_submit_button("Confirmer le transfert"):
                 if cat_source != cat_dest and (amt_usd > 0 or amt_cdf > 0):
