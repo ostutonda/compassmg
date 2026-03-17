@@ -6,7 +6,7 @@ from models.database import get_connection, add_log
 
 
     # --- 1. FONCTION DE FORMATAGE (À mettre tout en haut du fichier) ---
-    def format_fr(amount):
+   def format_fr(amount):
         return f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", " ")
 
     # --- 2. CRUD DES CATÉGORIES (SIDEBAR) ---
