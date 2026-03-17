@@ -5,58 +5,75 @@ import json
 from models.database import get_connection, add_log
 
 
-def format_money(amount):
-    # Formatage : Espace pour les milliers, virgule pour les décimales
-    return f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", " ")
+    # --- 1. FONCTION DE FORMATAGE (À mettre tout en haut du fichier) ---
+    def format_fr(amount):
+        return f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", " ")
 
-
-def show_finance():
-    st.title("💰 Trésorerie & Opérations")
-    conn = get_connection()
-    
-    # --- FONCTION DE CALCUL DU SOLDE PAR CATÉGORIE ---
-    def get_category_balance(cat_name):
-        res = conn.execute("""
-            SELECT 
-                SUM(CASE WHEN type = 'Entrée' THEN total_usd ELSE -total_usd END) as solde_usd,
-                SUM(CASE WHEN type = 'Entrée' THEN total_cdf ELSE -total_cdf END) as solde_cdf
-            FROM finances WHERE category = ?
-        """, (cat_name,)).fetchone()
-        return (res[0] or 0.0, res[1] or 0.0)
-
-    # --- 1. CRUD DES CATÉGORIES (SIDEBAR) ---
+    # --- 2. CRUD DES CATÉGORIES (SIDEBAR) ---
     with st.sidebar:
-        st.subheader("📁 Gérer les Catégories")
+        st.header("⚙️ Configuration")
         
-        # AJOUT
-        new_cat = st.text_input("Nouvelle catégorie")
-        if st.button("➕ Ajouter"):
-            if new_cat:
-                conn.execute("INSERT OR IGNORE INTO finance_categories (name) VALUES (?)", (new_cat,))
-                conn.commit()
-                st.rerun()
+        # Gestion du Taux
+        rate_db = conn.execute("SELECT rate FROM exchange_rates WHERE date_rate = ?", (today,)).fetchone()
+        current_rate = rate_db[0] if rate_db else 2800.0
+        new_rate = st.number_input("Taux (1$ = ? Fc)", value=float(current_rate), step=50.0)
+        
+        st.divider()
+        st.subheader("📁 Catégories (Entrées/Dépenses)")
+        
+        # AJOUTER
+        with st.form("add_cat_form", clear_on_submit=True):
+            new_cat = st.text_input("Nom de la catégorie")
+            if st.form_submit_button("➕ Ajouter"):
+                if new_cat:
+                    conn.execute("INSERT OR IGNORE INTO finance_categories (name) VALUES (?)", (new_cat,))
+                    conn.commit()
+                    st.rerun()
 
         st.divider()
         
-        # LISTE ET SUPPRESSION SÉCURISÉE
+        # LISTE, MODIFICATION ET SUPPRESSION SÉCURISÉE
         cats_df = pd.read_sql("SELECT * FROM finance_categories", conn)
+        
         for _, row in cats_df.iterrows():
-            c1, c2 = st.columns([7, 2])
-            usd, cdf = get_category_balance(row['name'])
-            
-            c1.text(f"{row['name']}")
-            c1.caption(f"Solde: {format_money(usd)} $ | {format_money(cdf)} Fc")
-            
-            # Condition de suppression : Solde doit être 0
-            if usd == 0 and cdf == 0:
-                if c2.button("🗑️", key=f"del_{row['id']}"):
+            with st.container():
+                # Calcul du solde pour cette catégorie
+                res = conn.execute("""
+                    SELECT 
+                        SUM(CASE WHEN type = 'Entrée' THEN total_usd ELSE -total_usd END) as s_usd,
+                        SUM(CASE WHEN type = 'Entrée' THEN total_cdf ELSE -total_cdf END) as s_cdf
+                    FROM finances WHERE category = ?
+                """, (row['name'],)).fetchone()
+                
+                solde_usd = res[0] or 0.0
+                solde_cdf = res[1] or 0.0
+                
+                # Affichage du nom et du solde
+                st.write(f"**{row['name']}**")
+                st.caption(f"Solde : {format_fr(solde_usd)} $ | {format_fr(solde_cdf)} Fc")
+                
+                c1, c2 = st.columns(2)
+                
+                # Bouton de modification (toujours actif)
+                if c1.button("✏️", key=f"edit_{row['id']}", use_container_width=True):
+                    st.info("Fonction de renommage à venir...")
+
+                # BOUTON SUPPRIMER : On vérifie si le solde est à ZÉRO
+                est_vide = (solde_usd == 0 and solde_cdf == 0)
+                
+                # On passe l'état "disabled" directement dans le bouton
+                if c2.button("🗑️", key=f"del_{row['id']}", 
+                             disabled=not est_vide, 
+                             help="Impossible de supprimer une catégorie avec un solde actif",
+                             use_container_width=True):
                     conn.execute("DELETE FROM finance_categories WHERE id = ?", (row['id'],))
                     conn.commit()
+                    st.success(f"{row['name']} supprimée")
                     st.rerun()
-            else:
-                c2.disabled = True # Désactivé si solde > 0
+                st.divider()
 
-    # --- 2. TRANSFERT ENTRE CATÉGORIES ---
+
+    # --- 3. TRANSFERT ENTRE CATÉGORIES ---
     with st.expander("🔄 Transfert de solde (Catégorie à Catégorie)"):
         with st.form("transfer_form"):
             col1, col2 = st.columns(2)
@@ -79,7 +96,7 @@ def show_finance():
                     st.success("Transfert effectué !")
                     st.rerun()
 
-    # --- 3. SAISIE DES OPÉRATIONS (DÉPENSES PAR CATÉGORIE) ---
+    # --- 4. SAISIE DES OPÉRATIONS (DÉPENSES PAR CATÉGORIE) ---
     # Ici, modifier la logique : même pour une 'Sortie', on propose la catégorie
     tab1, tab2 = st.tabs(["📝 Saisie", "📊 Rapports"])
     
