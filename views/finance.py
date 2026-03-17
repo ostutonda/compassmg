@@ -82,7 +82,7 @@ def show_finance():
                 if "df_usd" not in st.session_state:
                     st.session_state.df_usd = pd.DataFrame({"Billet": [100, 50, 20, 10, 5, 1], "Nombre": [0]*6, "Total (=)": [0]*6})
                 if "df_cdf" not in st.session_state:
-                    st.session_state.df_cdf = pd.DataFrame({"Billet": [20000, 10000, 5000, 1000, 500, 200, 100, 50], "Nombre": [0]*9, "Total (=)": [0]*9})
+                    st.session_state.df_cdf = pd.DataFrame({"Billet": [20000, 10000, 5000, 1000, 500, 200, 100, 50], "Nombre": [0]*8, "Total (=)": [0]*8})
 
                 col_u, col_c = st.columns(2)
                 
