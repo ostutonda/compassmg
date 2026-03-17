@@ -111,7 +111,7 @@ else:
     st.sidebar.markdown(f"""
         <div style='text-align: center; padding: 10px; border: 2px dashed #2E7D32; border-radius: 10px;'>
             <span style='font-size: 50px;'>⛪</span>
-            <p style='color: #2E7D32; font-weight: bold;'>{by OTM}</p>
+            <p style='color: #2E7D32; font-weight: bold;'>{"by OTM"}</p>
         </div>
     """, unsafe_allow_html=True)
 
