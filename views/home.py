@@ -5,7 +5,7 @@ import os
 from models.database import get_connection
 
 def show_home():
-    st.title("🏠 Accueil COMPASMG")
+    st.title("🏠 Accueil COMPASSION MONT-NGAFULA /HABITAT ")
     conn = get_connection()
     
     # --- LOGIQUE DE CONNEXION ---
