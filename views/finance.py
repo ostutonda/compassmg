@@ -206,8 +206,36 @@ def show_finance():
         else:
             st.info("Aucune donnée enregistrée pour cette période.")
 
-
-
+    if not df_r.empty:
+            # --- BOUTONS D'EXPORTATION ---
+            col_exp1, col_exp2, _ = st.columns([1, 1, 3])
+            
+            # Export PDF
+            pdf_bytes = generer_pdf(df_r, d_s, d_e)
+            col_exp1.download_button(label="📄 Exporter en PDF",
+                                     data=pdf_bytes,
+                                     file_name=f"Rapport_Finances_{today}.pdf",
+                                     mime="application/pdf")
+            
+            # Export EXCEL
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # On écrit un petit en-tête dans l'Excel
+                df_entete = pd.DataFrame([
+                    [eglise_dict.get('denomination', '')],
+                    [f"Adresse: {eglise_dict.get('adresse', '')} - Tél: {eglise_dict.get('telephone', '')}"]
+                ])
+                df_entete.to_excel(writer, index=False, header=False, sheet_name='Rapport', startrow=0)
+                
+                # On écrit les données
+                df_r.to_excel(writer, index=False, sheet_name='Rapport', startrow=3)
+            
+            col_exp2.download_button(label="📊 Exporter en Excel",
+                                     data=output.getvalue(),
+                                     file_name=f"Rapport_Finances_{today}.xlsx",
+                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.divider()
+            #----------------------- fin import -------------------------
 
 
     # --- TAB 3 : CONFIGURATION (CRUD) ---
