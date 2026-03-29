@@ -1,134 +1,210 @@
+#finance.py
 import streamlit as st
 import pandas as pd
-from datetime import date
+import uuid
 import json
-from models.database import get_connection, add_log
-
-def format_fr(amount):
-    """Affiche 1 250,50 au lieu de 1250.5"""
-    if amount is None: amount = 0.0
-    return f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", " ")
+from datetime import date
+from models.database import get_connection
 
 def show_finance():
-    st.title("💰 Trésorerie & Opérations")
+    st.title("💰 Gestion des Finances")
     conn = get_connection()
     today = date.today()
 
-    # --- 1. CRUD DES CATÉGORIES (SIDEBAR) ---
-    with st.sidebar:
-        st.header("⚙️ Configuration")
-        
-        # Gestion du Taux
-        rate_db = conn.execute("SELECT rate FROM exchange_rates WHERE date_rate = ?", (today,)).fetchone()
-        current_rate = rate_db[0] if rate_db else 2800.0
-        new_rate = st.number_input("Taux (1$ = ? Fc)", value=float(current_rate), step=50.0)
-        
-        st.divider()
-        st.subheader("📁 Catégories")
-        
-        # AJOUTER
-        with st.form("add_cat_form", clear_on_submit=True):
-            new_cat = st.text_input("Nom de la catégorie")
-            if st.form_submit_button("➕ Ajouter"):
-                if new_cat:
-                    conn.execute("INSERT OR IGNORE INTO finance_categories (name) VALUES (?)", (new_cat,))
-                    conn.commit()
-                    st.rerun()
+    # --- 0. MIGRATION & SÉCURITÉ BASE DE DONNÉES ---
+    try:
+        conn.execute("ALTER TABLE finances ADD COLUMN billetage_cdf TEXT DEFAULT '{}'")
+        conn.execute("ALTER TABLE finances ADD COLUMN billetage_usd TEXT DEFAULT '{}'")
+        conn.commit()
+    except:
+        pass
 
-        st.divider()
-        
-        # LISTE ET SUPPRESSION SÉCURISÉE
-        cats_df = pd.read_sql("SELECT * FROM finance_categories", conn)
-        for _, row in cats_df.iterrows():
-            # Calcul du solde actuel pour la sécurité
-            res = conn.execute("""
-                SELECT 
-                    SUM(CASE WHEN type = 'Entrée' THEN total_usd ELSE -total_usd END) as s_usd,
-                    SUM(CASE WHEN type = 'Entrée' THEN total_cdf ELSE -total_cdf END) as s_cdf
-                FROM finances WHERE category = ?
-            """, (row['name'],)).fetchone()
-            
-            s_usd, s_cdf = (res[0] or 0.0), (res[1] or 0.0)
-            
-            with st.container():
-                st.write(f"**{row['name']}**")
-                st.caption(f"Solde : {format_fr(s_usd)} $ | {format_fr(s_cdf)} Fc")
-                
-                c1, c2 = st.columns(2)
-                # On ne peut supprimer que si le solde est strictement 0
-                is_empty = (s_usd == 0 and s_cdf == 0)
-                
-                if c1.button("✏️", key=f"edit_{row['id']}", use_container_width=True):
-                    st.toast("Fonction bientôt disponible")
+    # --- 1. FONCTIONS ET INITIALISATION ---
+    def format_fr(amount):
+        return f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", " ")
 
-                if c2.button("🗑️", key=f"del_{row['id']}", disabled=not is_empty, use_container_width=True, help="Le solde doit être nul pour supprimer"):
-                    conn.execute("DELETE FROM finance_categories WHERE id = ?", (row['id'],))
-                    conn.commit()
-                    st.rerun()
-            st.divider()
+    def reset_inputs():
+        st.session_state.main_label = ""
+        st.session_state.man_usd = 0.0
+        st.session_state.man_cdf = 0.0
+        # Reset des dataframes de billetage
+        st.session_state.df_cdf["Nombre"] = 0
+        st.session_state.df_cdf["Total (=)"] = 0
+        st.session_state.df_usd["Nombre"] = 0
+        st.session_state.df_usd["Total (=)"] = 0
 
-    # --- 2. TRANSFERT ENTRE CATÉGORIES ---
-    with st.expander("🔄 Transfert de solde (Catégorie à Catégorie)"):
-        with st.form("transfer_form"):
-            col1, col2 = st.columns(2)
-            cat_source = col1.selectbox("Source (Sortie)", options=cats_df['name'].tolist())
-            cat_dest = col2.selectbox("Destination (Entrée)", options=cats_df['name'].tolist())
+    if "daily_ops" not in st.session_state:
+        st.session_state.daily_ops = []
 
-            m1, m2 = st.columns(2)
-            # CORRECTION : On assigne la valeur à une variable, pas à une fonction !
-            amt_usd = m1.number_input("Montant USD à transférer", min_value=0.0) 
-            amt_cdf = m2.number_input("Montant CDF à transférer", min_value=0.0)
+    if "df_cdf" not in st.session_state:
+        st.session_state.df_cdf = pd.DataFrame({
+            "Coupure": [20000, 10000, 5000, 1000, 500, 200, 100, 50],
+            "Nombre": [0] * 8, "Total (=)": [0] * 8
+        })
 
-            if st.form_submit_button("Confirmer le transfert"):
-                if cat_source != cat_dest and (amt_usd > 0 or amt_cdf > 0):
-                    # Sortie de la source
-                    conn.execute("INSERT INTO finances (date_trans, type, category, label, total_usd, total_cdf) VALUES (?, 'Sortie', ?, ?, ?, ?)",
-                                 (today, cat_source, f"Transfert vers {cat_dest}", amt_usd, amt_cdf))
-                    # Entrée dans la destination
-                    conn.execute("INSERT INTO finances (date_trans, type, category, label, total_usd, total_cdf) VALUES (?, 'Entrée', ?, ?, ?, ?)",
-                                 (today, cat_dest, f"Reçu de {cat_source}", amt_usd, amt_cdf))
-                    conn.commit()
-                    st.success("Transfert effectué !")
-                    st.rerun()
-                else:
-                    st.error("Vérifiez les catégories et les montants.")
+    if "df_usd" not in st.session_state:
+        st.session_state.df_usd = pd.DataFrame({
+            "Coupure": [100, 50, 20, 10, 5, 1],
+            "Nombre": [0] * 6, "Total (=)": [0] * 6
+        })
 
-    # --- 3. SAISIE DES OPÉRATIONS ---
-    tab1, tab2 = st.tabs(["📝 Saisie", "📊 Rapports & Historique"])
+    tab1, tab2, tab3 = st.tabs(["📝 Saisie", "📊 Rapports & Historique", "⚙️ Configuration"])
 
+    # --- TAB 1 : SAISIE DES OPÉRATIONS ---
     with tab1:
         with st.container(border=True):
-            c1, c2 = st.columns(2)
-            t_type = c1.selectbox("Flux", ["Entrée", "Sortie"])
-            t_cat = c2.selectbox("Appliquer à la catégorie", options=cats_df['name'].tolist())
-            t_label = st.text_input("Libellé / Justification (Obligatoire pour les sorties)")
+            c1, c2, c3 = st.columns(3)
+            t_type = c1.selectbox("Flux", ["Entrée", "Sortie"], key="main_type")
+            
+            try:
+                cats_df = pd.read_sql("SELECT name FROM finance_categories", conn)
+                cat_options = cats_df['name'].tolist() if not cats_df.empty else ["Général"]
+            except:
+                cat_options = ["Général"]
+            
+            t_cat = c2.selectbox("Catégorie", options=cat_options, key="main_cat")
+            t_date = c3.date_input("Date", value=today, key="main_date")
+            t_label = st.text_input("Libellé / Justification", key="main_label")
 
-            # Simulation de montants (Ici vous mettriez votre bloc de billetage)
-            col_m1, col_m2 = st.columns(2)
-            total_usd = col_m1.number_input("Montant Total USD ($)", min_value=0.0, key="main_usd")
-            total_cdf = col_m2.number_input("Montant Total CDF (Fc)", min_value=0.0, key="main_cdf")
+            t_montant1, t_montant2 = st.tabs(["💵 Billetage", "⌨️ Manuel"])
+            
+            with t_montant1:
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    st.caption("Francs Congolais (CDF)")
+                    res_cdf = st.data_editor(st.session_state.df_cdf, hide_index=True, key="ed_cdf",
+                                             column_config={"Coupure": st.column_config.NumberColumn(disabled=True),
+                                                            "Total (=)": st.column_config.NumberColumn(disabled=True, format="%d FC")})
+                    res_cdf["Total (=)"] = res_cdf["Coupure"] * res_cdf["Nombre"]
+                    total_cdf_billet = res_cdf["Total (=)"].sum()
+                    st.write(f"Total : **{format_fr(total_cdf_billet)} FC**")
+                
+                with col_b2:
+                    st.caption("Dollars (USD)")
+                    res_usd = st.data_editor(st.session_state.df_usd, hide_index=True, key="ed_usd",
+                                             column_config={"Coupure": st.column_config.NumberColumn(disabled=True),
+                                                            "Total (=)": st.column_config.NumberColumn(disabled=True, format="$ %d")})
+                    res_usd["Total (=)"] = res_usd["Coupure"] * res_usd["Nombre"]
+                    total_usd_billet = res_usd["Total (=)"].sum()
+                    st.write(f"Total : **{format_fr(total_usd_billet)} $**")
 
-            if st.button("✅ Valider l'opération"):
-                if t_type == "Sortie" and not t_label:
-                    st.error("Veuillez saisir un libellé pour justifier la dépense.")
-                elif total_usd == 0 and total_cdf == 0:
-                    st.warning("Veuillez saisir un montant.")
-                else:
-                    conn.execute("""
-                        INSERT INTO finances (date_trans, type, category, label, total_usd, total_cdf, rate)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (today, t_type, t_cat, t_label, total_usd, total_cdf, new_rate))
+            with t_montant2:
+                m_usd = st.number_input("Montant USD", min_value=0.0, key="man_usd")
+                m_cdf = st.number_input("Montant CDF", min_value=0.0, key="man_cdf")
+
+        if st.button("➕ Ajouter à la liste du jour", type="primary", use_container_width=True):
+            f_usd = total_usd_billet if total_usd_billet > 0 else m_usd
+            f_cdf = total_cdf_billet if total_cdf_billet > 0 else m_cdf
+
+            if t_type == "Sortie" and not t_label:
+                st.error("Le libellé est obligatoire pour une sortie.")
+            elif f_usd == 0 and f_cdf == 0:
+                st.warning("Veuillez saisir un montant.")
+            else:
+                b_cdf = res_cdf[res_cdf["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
+                b_usd = res_usd[res_usd["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
+
+                st.session_state.daily_ops.append({
+                    "id": str(uuid.uuid4()), "date": t_date, "type": t_type, "category": t_cat,
+                    "label": t_label, "usd": f_usd, "cdf": f_cdf,
+                    "b_cdf": b_cdf, "b_usd": b_usd, "is_billet": (total_usd_billet > 0 or total_cdf_billet > 0)
+                })
+                reset_inputs()
+                st.rerun()
+
+        if st.session_state.daily_ops:
+            st.subheader("📋 Opérations en attente")
+            for i, op in enumerate(st.session_state.daily_ops):
+                with st.container(border=True):
+                    c_inf, c_ed, c_de = st.columns([5, 1, 1])
+                    c_inf.write(f"**{op['type']}** | {op['category']} | {format_fr(op['usd'])}$ - {format_fr(op['cdf'])}Fc")
+                    c_inf.caption(f"{op['label']} {'(Billetage)' if op['is_billet'] else ''}")
+                    
+                    if c_de.button("🗑️", key=f"del_{op['id']}"):
+                        st.session_state.daily_ops.pop(i)
+                        st.rerun()
+                    if c_ed.button("✏️", key=f"edit_{op['id']}"):
+                        data = st.session_state.daily_ops.pop(i)
+                        st.session_state.main_type = data['type']
+                        st.session_state.main_cat = data['category']
+                        st.session_state.main_label = data['label']
+                        if not data['is_billet']:
+                            st.session_state.man_usd, st.session_state.man_cdf = data['usd'], data['cdf']
+                        st.rerun()
+
+            if st.button("💾 Enregistrer toutes les écritures", type="primary", use_container_width=True):
+                for op in st.session_state.daily_ops:
+                    conn.execute("INSERT INTO finances (date_trans, type, category, label, total_usd, total_cdf, billetage_cdf, billetage_usd) VALUES (?,?,?,?,?,?,?,?)",
+                                 (op['date'], op['type'], op['category'], op['label'], op['usd'], op['cdf'], json.dumps(op['b_cdf']), json.dumps(op['b_usd'])))
+                conn.commit()
+                st.session_state.daily_ops = []
+                st.success("Données enregistrées avec succès !")
+                st.rerun()
+
+    # --- TAB 2 : RAPPORTS & HISTORIQUE ---
+    with tab2:
+        st.subheader("📊 Rapport par période")
+        cs, ce = st.columns(2)
+        d_s, d_e = cs.date_input("Début", today.replace(day=1)), ce.date_input("Fin", today)
+
+        df_r = pd.read_sql("SELECT * FROM finances WHERE date_trans BETWEEN ? AND ?", conn, params=(d_s, d_e))
+        
+        if not df_r.empty:
+            for cat in df_r['category'].unique():
+                df_c = df_r[df_r['category'] == cat]
+                with st.expander(f"📂 {cat}", expanded=False):
+                    st.dataframe(df_c[['date_trans', 'type', 'label', 'total_usd', 'total_cdf']], hide_index=True, use_container_width=True)
+                    
+                    # Agrégation Billetage
+                    cumul_b = {}
+                    for b_j in df_c['billetage_cdf'].dropna():
+                        if b_j:
+                            try:
+                                d_b = json.loads(b_j)
+                                for k, v in d_b.items(): cumul_b[k] = cumul_b.get(k, 0) + int(v)
+                            except: continue
+                    if cumul_b:
+                        st.write("**Détail Billetage CDF :** " + " | ".join([f"{k}: {v}" for k, v in sorted(cumul_b.items(), key=lambda x:int(x[0]), reverse=True)]))
+                    
+                    s_u = df_c[df_c['type']=='Entrée']['total_usd'].sum() - df_c[df_c['type']=='Sortie']['total_usd'].sum()
+                    s_c = df_c[df_c['type']=='Entrée']['total_cdf'].sum() - df_c[df_c['type']=='Sortie']['total_cdf'].sum()
+                    st.markdown(f"**Solde {cat} : {format_fr(s_u)} $ | {format_fr(s_c)} FC**")
+        else:
+            st.info("Aucune donnée sur cette période.")
+
+    # --- TAB 3 : CONFIGURATION (CRUD) ---
+    with tab3:
+        st.header("⚙️ Paramètres")
+        
+        # CRUD TAUX
+        st.subheader("💱 Taux de Change")
+        with st.container(border=True):
+            r_db = conn.execute("SELECT rate, date_rate FROM exchange_rates ORDER BY date_rate DESC LIMIT 1").fetchone()
+            curr_r = r_db[0] if r_db else 2800.0
+            c_r1, c_r2 = st.columns([2,1])
+            n_r = c_r1.number_input(f"Taux (Actuel: {curr_r})", value=float(curr_r))
+            if c_r2.button("💾 Maj Taux", use_container_width=True):
+                conn.execute("INSERT OR REPLACE INTO exchange_rates (date_rate, rate) VALUES (?,?)", (today, n_r))
+                conn.commit()
+                st.rerun()
+
+        # CRUD CATÉGORIES
+        st.divider()
+        st.subheader("📁 Catégories")
+        with st.form("add_cat", clear_on_submit=True):
+            n_c = st.text_input("Nom nouvelle catégorie")
+            if st.form_submit_button("➕ Ajouter"):
+                if n_c:
+                    conn.execute("INSERT OR IGNORE INTO finance_categories (name) VALUES (?)", (n_c.strip(),))
                     conn.commit()
-                    st.success(f"Opération enregistrée : {format_fr(total_usd)} $ | {format_fr(total_cdf)} Fc")
                     st.rerun()
 
-            # Affichage formaté du montant en cours de saisie
-            st.info(f"Montant saisi : **{format_fr(total_usd)} $** | **{format_fr(total_cdf)} Fc**")
-
-    with tab2:
-        st.subheader("Dernières transactions")
-        history = pd.read_sql("SELECT date_trans, type, category, label, total_usd, total_cdf FROM finances ORDER BY id DESC LIMIT 20", conn)
-        # Application du formatage sur les colonnes du tableau pour l'affichage
-        history['total_usd'] = history['total_usd'].apply(format_fr)
-        history['total_cdf'] = history['total_cdf'].apply(format_fr)
-        st.dataframe(history, use_container_width=True)
+        cats = pd.read_sql("SELECT * FROM finance_categories ORDER BY name", conn)
+        for _, r in cats.iterrows():
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"**{r['name']}**")
+            usage = conn.execute("SELECT COUNT(*) FROM finances WHERE category = ?", (r['name'],)).fetchone()[0]
+            if col2.button("🗑️", key=f"dc_{r['id']}", disabled=usage > 0, help="Suppression impossible si utilisée"):
+                conn.execute("DELETE FROM finance_categories WHERE id = ?", (r['id'],))
+                conn.commit()
+                st.rerun()
