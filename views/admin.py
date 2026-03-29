@@ -86,6 +86,45 @@ def show_admin_panel():
                 st.rerun()
 
 
+        st.divider()
+        st.subheader("🏛️ Informations de l'Église (En-tête & Pied de page)")
+        
+        with st.form("form_eglise"):
+            c1, c2 = st.columns(2)
+            i_denom = c1.text_input("Dénomination", value=eglise_dict.get('denomination', ''))
+            i_resp = c2.text_input("Responsable", value=eglise_dict.get('Responsable', ''))
+            
+            c3, c4 = st.columns(2)
+            i_ext = c3.text_input("Extension de", value=eglise_dict.get('extensionDe', ''))
+            i_adr = c4.text_input("Adresse", value=eglise_dict.get('adresse', ''))
+            
+            c5, c6 = st.columns(2)
+            i_ouvert = c5.date_input("Date d'ouverture", value=pd.to_datetime(eglise_dict.get('dateOuverture', today)))
+            i_culte = c6.date_input("Date 1er culte", value=pd.to_datetime(eglise_dict.get('date1culte', today)))
+            
+            c7, c8, c9 = st.columns(3)
+            i_rccm = c7.text_input("RCCM", value=eglise_dict.get('rccm', ''))
+            i_idnat = c8.text_input("IDNAT", value=eglise_dict.get('idnat', ''))
+            i_tel = c9.text_input("Téléphone", value=eglise_dict.get('telephone', ''))
+            
+            if st.form_submit_button("💾 Enregistrer les informations", type="primary"):
+                conn.execute("""
+                    UPDATE eglise 
+                    SET denomination=?, extensionDe=?, dateOuverture=?, date1culte=?, 
+                        adresse=?, rccm=?, idnat=?, telephone=?, Responsable=?
+                    WHERE id = 1
+                """, (i_denom, i_ext, i_ouvert, i_culte, i_adr, i_rccm, i_idnat, i_tel, i_resp))
+                conn.commit()
+                st.success("Informations mises à jour !")
+                st.rerun()
+
+
+
+
+
+
+
+
     with tabs[3]:
         st.subheader("📜 Historique des actions (Logs)")
     
