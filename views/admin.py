@@ -7,7 +7,7 @@ def show_admin_panel():
     st.title("⚙️ Administration")
     conn = get_connection()
     
-    tab1, tab2, tab3, tab4 = st.tabs(["👥 Membres", "🏢 Départements", "⚙️ Paramètres", "📜 Logs"]) 
+    tab1, tab2, tab3, tab4 = st.tabs(["👥 Gestion des Membres", "🏢 Personnalisation du Thème", "⚙️ Informations de l'Église", "📜 Logs"]) 
     with tab1:
         st.subheader("Affecter un rôle à un membre")
         members_df = pd.read_sql("SELECT id, nom, prenom FROM members", conn)
@@ -38,7 +38,7 @@ def show_admin_panel():
                             st.success("Utilisateur créé avec succès !")
                         except: st.error("L'identifiant existe déjà.")
 
-# --- TAB 2 : CRUD DÉPARTEMENTS ---
+# --- TAB 2 : PERSONNALISATION DU THEME ---
 
     with tabs[2]:
         st.subheader("🎨 Personnalisation du Thème")
@@ -120,11 +120,6 @@ def show_admin_panel():
 
 
 
-
-
-
-
-
     with tabs[3]:
 
         st.subheader("🏛️ Informations de l'Église (En-tête & Pied de page)")
@@ -159,21 +154,25 @@ def show_admin_panel():
                 st.rerun()
 
 
-        st.divider()
-        st.subheader("📜 Historique des actions (Logs)")
-    
-    # On utilise 'user' (le nom en base) et on peut le renommer en 'username' pour l'affichage
-    query = "SELECT timestamp, user as username, role, action FROM logs ORDER BY timestamp DESC LIMIT 100"
-    
-    try:
-        logs_df = pd.read_sql(query, conn)
-        st.dataframe(logs_df, use_container_width=True)
-    except Exception as e:
-        st.error(f"Erreur lors de la lecture des logs : {e}")
+        
+        
         
     with tab4:
-        st.subheader("Personnalisation de l'interface")
+
+        st.subheader("📜 Historique des actions (Logs)")
+    
+        # On utilise 'user' (le nom en base) et on peut le renommer en 'username' pour l'affichage
+        query = "SELECT timestamp, user as username, role, action FROM logs ORDER BY timestamp DESC LIMIT 100"
+    
+            try:
+                logs_df = pd.read_sql(query, conn)
+                st.dataframe(logs_df, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erreur lors de la lecture des logs : {e}")
+
         
+        st.subheader("Personnalisation de l'interface")
+        st.divider()
         # Récupération des réglages actuels
         settings = dict(conn.execute("SELECT key, value FROM settings").fetchall())
         
@@ -191,3 +190,5 @@ def show_admin_panel():
                 conn.commit()
                 st.success("Design mis à jour ! Rechargez la page pour appliquer.")
                 st.rerun()
+        
+        
