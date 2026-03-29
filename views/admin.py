@@ -164,11 +164,11 @@ def show_admin_panel():
         # On utilise 'user' (le nom en base) et on peut le renommer en 'username' pour l'affichage
         query = "SELECT timestamp, user as username, role, action FROM logs ORDER BY timestamp DESC LIMIT 100"
     
-            try:
-                logs_df = pd.read_sql(query, conn)
-                st.dataframe(logs_df, use_container_width=True)
-            except Exception as e:
-                st.error(f"Erreur lors de la lecture des logs : {e}")
+        try:
+            logs_df = pd.read_sql(query, conn)
+            st.dataframe(logs_df, use_container_width=True)
+        except Exception as e:
+            st.error(f"Erreur lors de la lecture des logs : {e}")
 
         
         st.subheader("Personnalisation de l'interface")
