@@ -33,38 +33,6 @@ if 'logged_in' not in st.session_state:
         "privileges": []
     })
 
-
-    # --- 0. MIGRATION & SÉCURITÉ BASE DE DONNÉES ---
-    try:
-        conn.execute("ALTER TABLE finances ADD COLUMN billetage_cdf TEXT DEFAULT '{}'")
-        conn.execute("ALTER TABLE finances ADD COLUMN billetage_usd TEXT DEFAULT '{}'")
-        conn.commit()
-    except:
-        pass
-
-    # Création de la table Eglise
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS eglise (
-            id INTEGER PRIMARY KEY CHECK (id = 1), -- On force une seule ligne
-            denomination TEXT,
-            extensionDe TEXT,
-            dateOuverture DATE,
-            date1culte DATE,
-            adresse TEXT,
-            rccm TEXT,
-            idnat TEXT,
-            telephone TEXT,
-            Responsable TEXT
-        )
-    """)
-    # Insertion par défaut si la table est vide
-    conn.execute("""
-        INSERT OR IGNORE INTO eglise (id, denomination) 
-        VALUES (1, 'LA COMPASSION MONT-NGAFULA/HABITAT')
-    """)
-    conn.commit()
-
-
 # ==========================================
 # 3. GESTION DU DESIGN DYNAMIQUE
 # ==========================================
