@@ -141,36 +141,74 @@ def show_finance():
                 st.success("Données enregistrées avec succès !")
                 st.rerun()
 
-    # --- TAB 2 : RAPPORTS & HISTORIQUE ---
-    with tab2:
-        st.subheader("📊 Rapport par période")
-        cs, ce = st.columns(2)
-        d_s, d_e = cs.date_input("Début", today.replace(day=1)), ce.date_input("Fin", today)
 
-        df_r = pd.read_sql("SELECT * FROM finances WHERE date_trans BETWEEN ? AND ?", conn, params=(d_s, d_e))
+
+        # --- TAB 2 : RAPPORTS & HISTORIQUE (Version Détaillée) ---
+
+    with tab2:
+        st.subheader("📊 Rapport Chronologique Détaillé")
+        cs, ce = st.columns(2)
+        d_s = cs.date_input("Du", today.replace(day=1), key="rep_start")
+        d_e = ce.date_input("Au", today, key="rep_end")
+
+        # Extraction des données
+        df_r = pd.read_sql("SELECT * FROM finances WHERE date_trans BETWEEN ? AND ? ORDER BY date_trans DESC", 
+                           conn, params=(d_s, d_e))
         
         if not df_r.empty:
-            for cat in df_r['category'].unique():
-                df_c = df_r[df_r['category'] == cat]
-                with st.expander(f"📂 {cat}", expanded=False):
-                    st.dataframe(df_c[['date_trans', 'type', 'label', 'total_usd', 'total_cdf']], hide_index=True, use_container_width=True)
-                    
-                    # Agrégation Billetage
-                    cumul_b = {}
-                    for b_j in df_c['billetage_cdf'].dropna():
-                        if b_j:
+            # On regroupe par Libellé (l'événement)
+            for label in df_r['label'].unique():
+                df_label = df_r[df_r['label'] == label]
+                
+                # Affichage du titre de l'événement
+                st.markdown(f"### 📑 {label}")
+                
+                # Pour chaque opération sous ce libellé (souvent une ou plusieurs catégories)
+                for idx, row in df_label.iterrows():
+                    with st.container(border=True):
+                        st.markdown(f"**{row['category']}** ({row['type']})")
+                        
+                        col_cdf, col_usd = st.columns(2)
+                        
+                        # --- DÉTAIL CDF ---
+                        with col_cdf:
+                            st.caption("Détail Francs Congolais")
                             try:
-                                d_b = json.loads(b_j)
-                                for k, v in d_b.items(): cumul_b[k] = cumul_b.get(k, 0) + int(v)
-                            except: continue
-                    if cumul_b:
-                        st.write("**Détail Billetage CDF :** " + " | ".join([f"{k}: {v}" for k, v in sorted(cumul_b.items(), key=lambda x:int(x[0]), reverse=True)]))
-                    
-                    s_u = df_c[df_c['type']=='Entrée']['total_usd'].sum() - df_c[df_c['type']=='Sortie']['total_usd'].sum()
-                    s_c = df_c[df_c['type']=='Entrée']['total_cdf'].sum() - df_c[df_c['type']=='Sortie']['total_cdf'].sum()
-                    st.markdown(f"**Solde {cat} : {format_fr(s_u)} $ | {format_fr(s_c)} FC**")
+                                b_cdf = json.loads(row['billetage_cdf']) if row['billetage_cdf'] else {}
+                                if b_cdf:
+                                    for coupure, nombre in sorted(b_cdf.items(), key=lambda x: int(x[0]), reverse=True):
+                                        total_ligne = int(coupure) * int(nombre)
+                                        st.write(f" {format_fr(int(coupure))} fc x {nombre} = {format_fr(total_ligne)} fc")
+                                else:
+                                    st.write(f"Montant direct : {format_fr(row['total_cdf'])} fc")
+                            except:
+                                st.write(f"Montant : {format_fr(row['total_cdf'])} fc")
+                        
+                        # --- DÉTAIL USD ---
+                        with col_usd:
+                            st.caption("Détail Dollars")
+                            try:
+                                b_usd = json.loads(row['billetage_usd']) if row['billetage_usd'] else {}
+                                if b_usd:
+                                    for coupure, nombre in sorted(b_usd.items(), key=lambda x: int(x[0]), reverse=True):
+                                        total_ligne = int(coupure) * int(nombre)
+                                        st.write(f" {coupure} $ x {nombre} = {format_fr(total_ligne)} $")
+                                else:
+                                    st.write(f"Montant direct : {format_fr(row['total_usd'])} $")
+                            except:
+                                st.write(f"Montant : {format_fr(row['total_usd'])} $")
+                        
+                        # --- TOTAL DE LA CATÉGORIE ---
+                        st.divider()
+                        st.markdown(f"**Total {row['category']} :** `{format_fr(row['total_cdf'])} FC` et `{format_fr(row['total_usd'])} $`")
+                
+                st.write(" ") # Espace entre les événements
         else:
-            st.info("Aucune donnée sur cette période.")
+            st.info("Aucune donnée enregistrée pour cette période.")
+
+
+
+
 
     # --- TAB 3 : CONFIGURATION (CRUD) ---
     with tab3:
