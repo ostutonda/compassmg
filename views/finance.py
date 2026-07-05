@@ -1,10 +1,15 @@
-#finance.py
 import streamlit as st
 import pandas as pd
 import uuid
 import json
+import io
 from datetime import date
 from models.database import get_connection
+# Assurez-vous d'avoir 'fpdf' installé (pip install fpdf) si vous générez des PDF
+try:
+    from fpdf import FPDF
+except ImportError:
+    pass
 
 def show_finance():
     st.title("💰 Gestion des Finances")
@@ -15,9 +20,25 @@ def show_finance():
     try:
         conn.execute("ALTER TABLE finances ADD COLUMN billetage_cdf TEXT DEFAULT '{}'")
         conn.execute("ALTER TABLE finances ADD COLUMN billetage_usd TEXT DEFAULT '{}'")
+        
+        # Création de la table Eglise au cas où elle n'existe pas
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS eglise (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                denomination TEXT, extensionDe TEXT, dateOuverture DATE, 
+                date1culte DATE, adresse TEXT, rccm TEXT, idnat TEXT, 
+                telephone TEXT, Responsable TEXT
+            )
+        """)
+        conn.execute("INSERT OR IGNORE INTO eglise (id, denomination) VALUES (1, 'LA COMPASSION MONT-NGAFULA/HABITAT')")
         conn.commit()
-    except:
+    except Exception as e:
         pass
+
+    # Récupération des infos de l'église pour les exports
+    info_eglise = conn.execute("SELECT * FROM eglise WHERE id = 1").fetchone()
+    cols = ['id', 'denomination', 'extensionDe', 'dateOuverture', 'date1culte', 'adresse', 'rccm', 'idnat', 'telephone', 'Responsable']
+    eglise_dict = dict(zip(cols, info_eglise)) if info_eglise else {}
 
     # --- 1. FONCTIONS ET INITIALISATION ---
     def format_fr(amount):
@@ -27,7 +48,6 @@ def show_finance():
         st.session_state.main_label = ""
         st.session_state.man_usd = 0.0
         st.session_state.man_cdf = 0.0
-        # Reset des dataframes de billetage
         st.session_state.df_cdf["Nombre"] = 0
         st.session_state.df_cdf["Total (=)"] = 0
         st.session_state.df_usd["Nombre"] = 0
@@ -55,37 +75,50 @@ def show_finance():
         with st.container(border=True):
             c1, c2, c3 = st.columns(3)
             t_type = c1.selectbox("Flux", ["Entrée", "Sortie"], key="main_type")
-            
+
             try:
                 cats_df = pd.read_sql("SELECT name FROM finance_categories", conn)
                 cat_options = cats_df['name'].tolist() if not cats_df.empty else ["Général"]
             except:
                 cat_options = ["Général"]
-            
+
             t_cat = c2.selectbox("Catégorie", options=cat_options, key="main_cat")
             t_date = c3.date_input("Date", value=today, key="main_date")
             t_label = st.text_input("Libellé / Justification", key="main_label")
 
             t_montant1, t_montant2 = st.tabs(["💵 Billetage", "⌨️ Manuel"])
-            
+
             with t_montant1:
                 col_b1, col_b2 = st.columns(2)
+                
                 with col_b1:
                     st.caption("Francs Congolais (CDF)")
                     res_cdf = st.data_editor(st.session_state.df_cdf, hide_index=True, key="ed_cdf",
                                              column_config={"Coupure": st.column_config.NumberColumn(disabled=True),
                                                             "Total (=)": st.column_config.NumberColumn(disabled=True, format="%d FC")})
-                    res_cdf["Total (=)"] = res_cdf["Coupure"] * res_cdf["Nombre"]
-                    total_cdf_billet = res_cdf["Total (=)"].sum()
+                    
+                    # CORRECTION : Mise à jour en temps réel du DataFrame CDF
+                    if not res_cdf["Nombre"].equals(st.session_state.df_cdf["Nombre"]):
+                        st.session_state.df_cdf["Nombre"] = res_cdf["Nombre"]
+                        st.session_state.df_cdf["Total (=)"] = st.session_state.df_cdf["Coupure"] * st.session_state.df_cdf["Nombre"]
+                        st.rerun() # Force le rafraîchissement visuel de la table
+                    
+                    total_cdf_billet = st.session_state.df_cdf["Total (=)"].sum()
                     st.write(f"Total : **{format_fr(total_cdf_billet)} FC**")
-                
+
                 with col_b2:
                     st.caption("Dollars (USD)")
                     res_usd = st.data_editor(st.session_state.df_usd, hide_index=True, key="ed_usd",
                                              column_config={"Coupure": st.column_config.NumberColumn(disabled=True),
                                                             "Total (=)": st.column_config.NumberColumn(disabled=True, format="$ %d")})
-                    res_usd["Total (=)"] = res_usd["Coupure"] * res_usd["Nombre"]
-                    total_usd_billet = res_usd["Total (=)"].sum()
+                    
+                    # CORRECTION : Mise à jour en temps réel du DataFrame USD
+                    if not res_usd["Nombre"].equals(st.session_state.df_usd["Nombre"]):
+                        st.session_state.df_usd["Nombre"] = res_usd["Nombre"]
+                        st.session_state.df_usd["Total (=)"] = st.session_state.df_usd["Coupure"] * st.session_state.df_usd["Nombre"]
+                        st.rerun() # Force le rafraîchissement visuel de la table
+                        
+                    total_usd_billet = st.session_state.df_usd["Total (=)"].sum()
                     st.write(f"Total : **{format_fr(total_usd_billet)} $**")
 
             with t_montant2:
@@ -101,8 +134,8 @@ def show_finance():
             elif f_usd == 0 and f_cdf == 0:
                 st.warning("Veuillez saisir un montant.")
             else:
-                b_cdf = res_cdf[res_cdf["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
-                b_usd = res_usd[res_usd["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
+                b_cdf = st.session_state.df_cdf[st.session_state.df_cdf["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
+                b_usd = st.session_state.df_usd[st.session_state.df_usd["Nombre"] > 0].set_index("Coupure")["Nombre"].to_dict()
 
                 st.session_state.daily_ops.append({
                     "id": str(uuid.uuid4()), "date": t_date, "type": t_type, "category": t_cat,
@@ -119,7 +152,7 @@ def show_finance():
                     c_inf, c_ed, c_de = st.columns([5, 1, 1])
                     c_inf.write(f"**{op['type']}** | {op['category']} | {format_fr(op['usd'])}$ - {format_fr(op['cdf'])}Fc")
                     c_inf.caption(f"{op['label']} {'(Billetage)' if op['is_billet'] else ''}")
-                    
+
                     if c_de.button("🗑️", key=f"del_{op['id']}"):
                         st.session_state.daily_ops.pop(i)
                         st.rerun()
@@ -142,9 +175,7 @@ def show_finance():
                 st.rerun()
 
 
-
-        # --- TAB 2 : RAPPORTS & HISTORIQUE (Version Détaillée) ---
-
+    # --- TAB 2 : RAPPORTS & HISTORIQUE (Version Détaillée) ---
     with tab2:
         st.subheader("📊 Rapport Chronologique Détaillé")
         cs, ce = st.columns(2)
@@ -154,22 +185,22 @@ def show_finance():
         # Extraction des données
         df_r = pd.read_sql("SELECT * FROM finances WHERE date_trans BETWEEN ? AND ? ORDER BY date_trans DESC", 
                            conn, params=(d_s, d_e))
-        
+
         if not df_r.empty:
             # On regroupe par Libellé (l'événement)
             for label in df_r['label'].unique():
                 df_label = df_r[df_r['label'] == label]
-                
+
                 # Affichage du titre de l'événement
                 st.markdown(f"### 📑 {label}")
-                
-                # Pour chaque opération sous ce libellé (souvent une ou plusieurs catégories)
+
+                # Pour chaque opération sous ce libellé
                 for idx, row in df_label.iterrows():
                     with st.container(border=True):
                         st.markdown(f"**{row['category']}** ({row['type']})")
-                        
+
                         col_cdf, col_usd = st.columns(2)
-                        
+
                         # --- DÉTAIL CDF ---
                         with col_cdf:
                             st.caption("Détail Francs Congolais")
@@ -183,7 +214,7 @@ def show_finance():
                                     st.write(f"Montant direct : {format_fr(row['total_cdf'])} fc")
                             except:
                                 st.write(f"Montant : {format_fr(row['total_cdf'])} fc")
-                        
+
                         # --- DÉTAIL USD ---
                         with col_usd:
                             st.caption("Détail Dollars")
@@ -197,52 +228,49 @@ def show_finance():
                                     st.write(f"Montant direct : {format_fr(row['total_usd'])} $")
                             except:
                                 st.write(f"Montant : {format_fr(row['total_usd'])} $")
-                        
+
                         # --- TOTAL DE LA CATÉGORIE ---
                         st.divider()
                         st.markdown(f"**Total {row['category']} :** `{format_fr(row['total_cdf'])} FC` et `{format_fr(row['total_usd'])} $`")
-                
-                st.write(" ") # Espace entre les événements
-        else:
-            st.info("Aucune donnée enregistrée pour cette période.")
 
-    if not df_r.empty:
+                st.write(" ") 
+
             # --- BOUTONS D'EXPORTATION ---
+            # CORRECTION : Bloc replacé à l'intérieur du bloc 'with tab2:' et indenté correctement
             col_exp1, col_exp2, _ = st.columns([1, 1, 3])
-            
-            # Export PDF
-            pdf_bytes = generer_pdf(df_r, d_s, d_e)
-            col_exp1.download_button(label="📄 Exporter en PDF",
-                                     data=pdf_bytes,
-                                     file_name=f"Rapport_Finances_{today}.pdf",
-                                     mime="application/pdf")
-            
+
+            # Export PDF (Si generer_pdf est défini, sinon ceci renverra une erreur, assurez-vous d'avoir la fonction)
+            try:
+                pdf_bytes = generer_pdf(df_r, d_s, d_e) # Fonction à définir dans le fichier ou en externe
+                col_exp1.download_button(label="📄 Exporter en PDF",
+                                         data=pdf_bytes,
+                                         file_name=f"Rapport_Finances_{today}.pdf",
+                                         mime="application/pdf")
+            except NameError:
+                col_exp1.caption("La fonction 'generer_pdf' n'est pas trouvée.")
+
             # Export EXCEL
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # On écrit un petit en-tête dans l'Excel
                 df_entete = pd.DataFrame([
                     [eglise_dict.get('denomination', '')],
                     [f"Adresse: {eglise_dict.get('adresse', '')} - Tél: {eglise_dict.get('telephone', '')}"]
                 ])
                 df_entete.to_excel(writer, index=False, header=False, sheet_name='Rapport', startrow=0)
-                
-                # On écrit les données
                 df_r.to_excel(writer, index=False, sheet_name='Rapport', startrow=3)
-            
+
             col_exp2.download_button(label="📊 Exporter en Excel",
                                      data=output.getvalue(),
                                      file_name=f"Rapport_Finances_{today}.xlsx",
                                      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.divider()
-            #----------------------- fin import -------------------------
-
+        else:
+            st.info("Aucune donnée enregistrée pour cette période.")
 
     # --- TAB 3 : CONFIGURATION (CRUD) ---
     with tab3:
         st.header("⚙️ Paramètres")
-        
-        # CRUD TAUX
+
         st.subheader("💱 Taux de Change")
         with st.container(border=True):
             r_db = conn.execute("SELECT rate, date_rate FROM exchange_rates ORDER BY date_rate DESC LIMIT 1").fetchone()
@@ -254,7 +282,6 @@ def show_finance():
                 conn.commit()
                 st.rerun()
 
-        # CRUD CATÉGORIES
         st.divider()
         st.subheader("📁 Catégories")
         with st.form("add_cat", clear_on_submit=True):
